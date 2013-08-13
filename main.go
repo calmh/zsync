@@ -278,13 +278,16 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 			}
 
 			b = b[:cap(b)]
-			n, e := r.Read(b)
+			n, e := io.ReadFull(r, b)
 
 			b = b[:n]
 			atomic.AddInt32(&queue, int32(n))
 			rb <- b
 
-			if e == io.EOF {
+			if e == io.ErrUnexpectedEOF {
+				rb <- []byte{}
+				break
+			} else if e == io.EOF {
 				break
 			}
 			panicOn(e)
@@ -318,7 +321,7 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 
 			td := time.Since(t1)
 			if td.Seconds() > 1 {
-				fmt.Printf("\rs:%7sB  ds:%7sB/s  b:%3d/%3d  q:%7sB", toSi(tot), toSi(int(float64(tot)/time.Since(t0).Seconds())), depth, maxDepth, toSi(int(queue)))
+				fmt.Printf("\r%6sB  %6sB/s %6sB", toSi(tot), toSi(int(float64(tot)/time.Since(t0).Seconds())), toSi(int(queue)))
 				t1 = time.Now()
 			}
 		}
@@ -332,12 +335,12 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 
 func toSi(n int) string {
 	if n > 1e9 {
-		return fmt.Sprintf("%.01f G", float64(n)/1e9)
+		return fmt.Sprintf("%.01fG", float64(n)/1e9)
 	} else if n > 1e6 {
-		return fmt.Sprintf("%.01f M", float64(n)/1e6)
+		return fmt.Sprintf("%.01fM", float64(n)/1e6)
 	} else if n > 1e3 {
-		return fmt.Sprintf("%.01f k", float64(n)/1e3)
+		return fmt.Sprintf("%.01fk", float64(n)/1e3)
 	} else {
-		return fmt.Sprintf("%d ", n)
+		return fmt.Sprintf("%d", n)
 	}
 }
