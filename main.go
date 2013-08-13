@@ -264,7 +264,7 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 		wb <- make([]byte, bufsize)
 	}
 
-	var depth, maxDepth int32
+	var depth, maxDepth, queue int32
 	var tot int
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -281,6 +281,7 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 			n, e := r.Read(b)
 
 			b = b[:n]
+			atomic.AddInt32(&queue, int32(n))
 			rb <- b
 
 			if e == io.EOF {
@@ -292,9 +293,13 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 	}()
 
 	go func() {
+		t0 := time.Now()
+		t1 := t0
+
 		for {
 			b := <-rb
 			l := uint32(len(b))
+			atomic.AddInt32(&queue, int32(-l))
 
 			err := binary.Write(w, binary.BigEndian, &l)
 			panicOn(err)
@@ -310,10 +315,29 @@ func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
 
 			tot += n
 			panicOn(err)
+
+			td := time.Since(t1)
+			if td.Seconds() > 1 {
+				fmt.Printf("\rs:%7sB  ds:%7sB/s  b:%3d/%3d  q:%7sB", toSi(tot), toSi(int(float64(tot)/time.Since(t0).Seconds())), depth, maxDepth, toSi(int(queue)))
+				t1 = time.Now()
+			}
 		}
+		fmt.Println()
 		wg.Done()
 	}()
 
 	wg.Wait()
 	return tot, maxDepth
+}
+
+func toSi(n int) string {
+	if n > 1e9 {
+		return fmt.Sprintf("%.01f G", float64(n)/1e9)
+	} else if n > 1e6 {
+		return fmt.Sprintf("%.01f M", float64(n)/1e6)
+	} else if n > 1e3 {
+		return fmt.Sprintf("%.01f k", float64(n)/1e3)
+	} else {
+		return fmt.Sprintf("%d ", n)
+	}
 }
