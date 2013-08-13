@@ -1,0 +1,22 @@
+#!/bin/bash
+
+path="${0%/zfs}"
+
+if [[ $1 == "snapshot" && $2 == "nonexistant@foo" ]] ; then
+	cat "$path/zfssnapfail"
+	exit 2
+fi
+
+if [[ $1 == "snapshot" && $2 == "zones@foo" ]] ; then
+	exit 0
+fi
+
+if [[ $1 == "list" && $3 == "name,used,avail,refer,mountpoint,type" ]] ; then
+	cat "$path/zfslist"
+	exit 0
+fi
+
+if [[ $1 == "list" && $3 == "name,used,refer,creation" ]] ; then
+	cat "$path/zfssnaps"
+	exit 0
+fi

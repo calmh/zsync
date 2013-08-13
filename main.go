@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/calmh/zfs"
-	"github.com/jessevdk/go-flags"
+	"github.com/calmh/zsync/github.com/calmh/zfs"
+	"github.com/calmh/zsync/github.com/jessevdk/go-flags"
 )
 
 const protocolVersion = "zsync/1.0"
@@ -222,42 +224,10 @@ func client(ds, host string) {
 	logf(VERBOSE, "sending\n")
 
 	t0 := time.Now()
-	t1 := t0
-	var tot, subTot uint64
+	tot, qd := bufferedCopyOut(stdin, stream)
 
-	bs := make([]byte, 64*1024)
-	for {
-		bs = bs[:cap(bs)]
-		n, err := stream.Read(bs)
-		if err == io.EOF {
-			var l uint32 = 0
-			err = binary.Write(stdin, binary.BigEndian, &l)
-			break
-		}
-		panicOn(err)
-
-		bs = bs[:n]
-		l := uint32(n)
-		err = binary.Write(stdin, binary.BigEndian, &l)
-		panicOn(err)
-		n2, err := stdin.Write(bs)
-		panicOn(err)
-		if n != n2 {
-			panic(fmt.Errorf("short write: %d != %d", n2, n))
-		}
-
-		tot += uint64(n)
-		subTot += uint64(n)
-
-		if time.Since(t1).Seconds() >= 10 {
-			td := time.Since(t1)
-			logf(VERBOSE, "wrote %d bytes in %.2f seconds (%3.1f KBps)\n", tot, td.Seconds(), float64(tot/1024)/td.Seconds())
-			t1 = time.Now()
-			subTot = 0
-		}
-	}
 	td := time.Since(t0)
-	logf(VERBOSE, "wrote %d bytes in %.2f seconds (%3.1f KBps)\n", tot, td.Seconds(), float64(tot/1024)/td.Seconds())
+	logf(INFO, "sent %s@%s; %d bytes in %.2f seconds (%3.1f KBps), qd=%d\n", toSend.Dataset, toSend.Snapshot, tot, td.Seconds(), float64(tot/1024)/td.Seconds(), qd)
 }
 
 func latestCommon(o, n []zfs.SnapshotEntry) *zfs.SnapshotEntry {
@@ -282,4 +252,68 @@ func logf(level LogLevel, format string, args ...interface{}) {
 	if opts.verbosity >= level {
 		fmt.Fprintf(os.Stderr, format, args...)
 	}
+}
+
+func bufferedCopyOut(w io.Writer, r io.Reader) (int, int32) {
+	nbufs := 1000
+	bufsize := 65536
+
+	wb := make(chan []byte, nbufs)
+	rb := make(chan []byte, nbufs)
+	for i := 0; i < nbufs; i++ {
+		wb <- make([]byte, bufsize)
+	}
+
+	var depth, maxDepth int32
+	var tot int
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		for {
+			b := <-wb
+			atomic.AddInt32(&depth, 1)
+			if depth > maxDepth {
+				maxDepth = depth
+			}
+
+			b = b[:cap(b)]
+			n, e := r.Read(b)
+
+			b = b[:n]
+			rb <- b
+
+			if e == io.EOF {
+				break
+			}
+			panicOn(e)
+		}
+		wg.Done()
+	}()
+
+	go func() {
+		for {
+			b := <-rb
+			l := uint32(len(b))
+
+			err := binary.Write(w, binary.BigEndian, &l)
+			panicOn(err)
+
+			if l == 0 {
+				break
+			}
+
+			n, err := w.Write(b)
+
+			atomic.AddInt32(&depth, -1)
+			wb <- b
+
+			tot += n
+			panicOn(err)
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
+	return tot, maxDepth
 }

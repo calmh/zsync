@@ -1,0 +1,7 @@
+cannot open 'nonexistant': dataset does not exist
+usage:
+snapshot [-r] [-o property=value] ... <filesystem@snapname|volume@snapname> ...
+
+For the property list, run: zfs set|get
+
+For the delegated permission list, run: zfs allow|unallow
