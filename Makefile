@@ -1,4 +1,4 @@
-zsync_src = main.go
+zsync_src = main.go chunkedwriter.go client.go server.go
 zfs_src = $(shell ls github.com/calmh/zfs/*.go | grep -v _test)
 zfs_obj = github.com/calmh/zfs.o
 flags_src = $(shell ls github.com/jessevdk/go-flags/*.go | grep -v _test | grep -v _other | grep -v _linux | grep -v _windows) 
