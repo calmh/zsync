@@ -5,13 +5,13 @@ flags_src = $(shell ls github.com/jessevdk/go-flags/*.go | grep -v _test | grep 
 flags_obj = github.com/jessevdk/go-flags.o
 
 zsync: $(zsync_src) $(zfs_obj) $(flags_obj)
-        gccgo -static-libgo -static-libgcc -lnsl -lsocket -o $@ $^
+	gccgo -static-libgo -static-libgcc -lnsl -lsocket -o $@ $^
 
 $(zfs_obj): $(zfs_src)
-        gccgo -c -o $@ $^
+	gccgo -c -o $@ $^
 
 $(flags_obj): $(flags_src)
-        gccgo -c -o $@ $^
+	gccgo -c -o $@ $^
 
 clean:
-        rm zsync $(zfs_obj) $(flags_obj)
+	rm zsync $(zfs_obj) $(flags_obj)

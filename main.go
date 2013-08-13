@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/calmh/zsync/github.com/calmh/zfs"
-	"github.com/calmh/zsync/github.com/jessevdk/go-flags"
+	"github.com/calmh/zfs"
+	"github.com/jessevdk/go-flags"
 )
 
 const protocolVersion = "zsync/1.0"
@@ -123,7 +123,7 @@ func server() {
 				panicOn(err)
 				n, err := rs.Write(bs)
 				if n != int(l) {
-					panic(fmt.Errorf("short write: %d = %d", n, l))
+					panic(fmt.Errorf("short write: %d != %d", n, l))
 				}
 				panicOn(err)
 			}
