@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 )
 
 func client(ds, host string) {
+	var command Command
 	var serverDs string
 	if strings.ContainsRune(host, ':') {
 		fs := strings.SplitN(host, ":", 2)
@@ -23,39 +25,27 @@ func client(ds, host string) {
 		serverDs = ds
 	}
 
-	logf(DEBUG, "exec: ssh %s %s --server\n", host, opts.ZsyncPath)
-	cmd := exec.Command("ssh", host, opts.ZsyncPath, "--server")
-	stdin, err := cmd.StdinPipe()
+	logf(DEBUG, "exec: ssh %s %s -vvv --server\n", host, opts.ZsyncPath)
+	sshCmd := exec.Command("ssh", host, opts.ZsyncPath, "--server")
+	stdin, err := sshCmd.StdinPipe()
 	panicOn(err)
-	stdout, err := cmd.StdoutPipe()
+	stdout, err := sshCmd.StdoutPipe()
 	panicOn(err)
-	stderr, err := cmd.StderrPipe()
+	stderr, err := sshCmd.StderrPipe()
 	panicOn(err)
-	err = cmd.Start()
-	panicOn(err)
-	go func() {
-		err := cmd.Wait()
-		panicOn(err)
-	}()
 
-	go func() {
-		br := bufio.NewReader(stderr)
-		for {
-			bs, _, err := br.ReadLine()
-			if err == io.EOF {
-				break
-			}
-			fmt.Printf("REMOTE: %s\n", bs)
-		}
-	}()
+	go printLines(stderr)
+
+	err = sshCmd.Start()
+	panicOn(err)
 
 	e := gob.NewEncoder(stdin)
 	d := gob.NewDecoder(stdout)
 
 	negotiateVersion(e, d)
 
-	l := Command{Command: CmdListSnapshots, Params: []string{serverDs}}
-	err = e.Encode(l)
+	command = Command{Command: CmdListSnapshots, Params: []string{serverDs}}
+	err = e.Encode(&command)
 	panicOn(err)
 
 	var serverSnapshots []zfs.SnapshotEntry
@@ -66,26 +56,39 @@ func client(ds, host string) {
 	panicOn(err)
 
 	toSend := clientSnapshots[len(clientSnapshots)-1]
-	logf(VERBOSE, "our latest: %s@%s\n", toSend.Dataset, toSend.Snapshot)
+	logf(VERBOSE, "zsync: our latest: %s@%s\n", toSend.Dataset, toSend.Snapshot)
 
 	latest := latestCommon(serverSnapshots, clientSnapshots)
 	if latest != nil {
-		logf(VERBOSE, "remote latest: %s@%s\n", latest.Dataset, latest.Snapshot)
+		logf(VERBOSE, "zsync: remote latest: %s@%s\n", latest.Dataset, latest.Snapshot)
+	} else {
+		logf(VERBOSE, "zsync: remote dataset missing or no snapshots in common\n")
 	}
 
 	if latest != nil && toSend.Snapshot == latest.Snapshot {
-		logf(INFO, "nothing to send (destination in sync)\n")
+		logf(INFO, "zsync: nothing to send (destination in sync)\n")
 		return
 	}
 
-	params := []string{"-R"}
+	params := []string{"send"}
+	if !opts.NoRecurse {
+		params = append(params, "-R")
+	}
 	if latest != nil {
 		params = append(params, "-I", "@"+latest.Snapshot)
 	}
 	params = append(params, ds+"@"+toSend.Snapshot)
 
-	logf(DEBUG, "DEBUG: zfs.Send(%v)\n", params)
-	stream, err := zfs.Send(params...)
+	logf(VERBOSE, "zsync: snapshot in common: %s@%s\n", toSend.Dataset, latest.Snapshot)
+
+	sendCmd := exec.Command("zfs", params...)
+	stream, _ := sendCmd.StdoutPipe()
+	sendStderr, err := sendCmd.StderrPipe()
+	panicOn(err)
+
+	go printLines(sendStderr)
+
+	err = sendCmd.Start()
 	panicOn(err)
 
 	params = nil
@@ -100,13 +103,35 @@ func client(ds, host string) {
 	err = e.Encode(sc)
 	panicOn(err)
 
-	logf(VERBOSE, "sending\n")
+	logf(VERBOSE, "zsync: sending %s@%s\n", toSend.Dataset, toSend.Snapshot)
 
 	t0 := time.Now()
 	tot := bufferedCopyOut(ChunkedWriter{stdin}, stream)
 
+	err = sendCmd.Wait()
+	panicOn(err)
+
+	err = d.Decode(&command)
+	panicOn(err)
+
+	stdin.Close()
+
+	err = sshCmd.Wait()
+	panicOn(err)
+
 	td := time.Since(t0)
-	logf(INFO, "sent %s@%s; %sB in %.2f seconds (%sB/s)\n", toSend.Dataset, toSend.Snapshot, toSi(tot), td.Seconds(), toSi(int(float64(tot)/td.Seconds())))
+	logf(INFO, "zsync: sent %s@%s; %sB in %.2f seconds (%sB/s)\n", toSend.Dataset, toSend.Snapshot, toSi(tot), td.Seconds(), toSi(int(float64(tot)/td.Seconds())))
+}
+
+func printLines(r io.Reader) {
+	br := bufio.NewReader(r)
+	for {
+		bs, _, err := br.ReadLine()
+		if err == io.EOF {
+			break
+		}
+		fmt.Println(bs)
+	}
 }
 
 func latestCommon(o, n []zfs.SnapshotEntry) *zfs.SnapshotEntry {
@@ -161,7 +186,7 @@ func bufferedCopyOut(w io.WriteCloser, r io.Reader) int {
 	go func() {
 		var printed bool
 		t0 := time.Now()
-		t1 := t0
+		var t1 time.Time
 
 		for {
 			b := <-rb
@@ -178,12 +203,14 @@ func bufferedCopyOut(w io.WriteCloser, r io.Reader) int {
 
 			tot += n
 
-			td := time.Since(t1)
-			if td.Seconds() > 1 {
-				printed = true
-				rate := int(float64(tot) / time.Since(t0).Seconds())
-				fmt.Printf("\rsending  %6sB  %6sB/s", toSi(tot), toSi(rate))
-				t1 = time.Now()
+			if opts.Progress {
+				td := time.Since(t1)
+				if td.Seconds() > 1 {
+					printed = true
+					rate := int(float64(tot) / time.Since(t0).Seconds())
+					fmt.Fprintf(os.Stderr, "\rzsync: send:  %6sB  %6sB/s", toSi(tot), toSi(rate))
+					t1 = time.Now()
+				}
 			}
 		}
 
