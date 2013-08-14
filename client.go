@@ -127,7 +127,7 @@ func printLines(r io.Reader) {
 		if err == io.EOF {
 			break
 		}
-		fmt.Println(bs)
+		fmt.Println(string(bs))
 	}
 }
 
