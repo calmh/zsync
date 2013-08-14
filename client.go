@@ -60,14 +60,13 @@ func client(ds, host string) {
 
 	latest := latestCommon(serverSnapshots, clientSnapshots)
 	if latest != nil {
-		logf(VERBOSE, "zsync: remote latest: %s@%s\n", latest.Dataset, latest.Snapshot)
+		logf(VERBOSE, "zsync: snapshot in common: %s@%s\n", latest.Dataset, latest.Snapshot)
+		if toSend.Snapshot == latest.Snapshot {
+			logf(INFO, "zsync: nothing to send (destination in sync)\n")
+			return
+		}
 	} else {
 		logf(VERBOSE, "zsync: remote dataset missing or no snapshots in common\n")
-	}
-
-	if latest != nil && toSend.Snapshot == latest.Snapshot {
-		logf(INFO, "zsync: nothing to send (destination in sync)\n")
-		return
 	}
 
 	params := []string{"send"}
@@ -78,8 +77,6 @@ func client(ds, host string) {
 		params = append(params, "-I", "@"+latest.Snapshot)
 	}
 	params = append(params, ds+"@"+toSend.Snapshot)
-
-	logf(VERBOSE, "zsync: snapshot in common: %s@%s\n", toSend.Dataset, latest.Snapshot)
 
 	sendCmd := exec.Command("zfs", params...)
 	stream, _ := sendCmd.StdoutPipe()
