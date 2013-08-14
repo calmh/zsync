@@ -19,6 +19,8 @@ func server() {
 
 	negotiateVersion(e, d)
 
+	logf(VERBOSE, "server: starting up\n")
+
 	var c Command
 
 	for {
@@ -30,18 +32,27 @@ func server() {
 
 		switch c.Command {
 		case CmdListSnapshots:
-			logf(DEBUG, "listing snapshots\n")
+			logf(DEBUG, "server: listing snapshots\n")
 			s, _ := zfs.ListSnapshots(c.Params[0])
 			err = e.Encode(s)
 			panicOn(err)
 		case CmdReceive:
-			logf(DEBUG, "zfs recv %v\n", c.Params)
+			logf(DEBUG, "server: zfs recv %v\n", c.Params)
 
 			args := []string{"recv"}
 			args = append(args, c.Params...)
 			cmd := exec.Command("zfs", args...)
-			stdin, _ := cmd.StdinPipe()
-			err := cmd.Start()
+			stdin, err := cmd.StdinPipe()
+			panicOn(err)
+			stderr, err := cmd.StderrPipe()
+			panicOn(err)
+			stdout, err := cmd.StdoutPipe()
+			panicOn(err)
+
+			go printLines("zfs recv: ", stderr)
+			go printLines("zfs recv: ", stdout)
+
+			err = cmd.Start()
 			panicOn(err)
 
 			for {
@@ -52,14 +63,19 @@ func server() {
 					break
 				}
 				panicOn(err)
+
 				bs := make([]byte, l)
 				_, err = io.ReadFull(bstdin, bs)
 				panicOn(err)
+
 				n, err := stdin.Write(bs)
-				if n != int(l) {
-					panic(fmt.Errorf("short write: %d != %d", n, l))
-				}
+				// if err != nil {
+				// 	break
+				// }
 				panicOn(err)
+				if n != int(l) {
+					panic(fmt.Errorf("server: short write: %d != %d", n, l))
+				}
 			}
 
 			err = cmd.Wait()

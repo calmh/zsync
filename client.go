@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -25,7 +24,6 @@ func client(ds, host string) {
 		serverDs = ds
 	}
 
-	logf(DEBUG, "exec: ssh %s %s -vvv --server\n", host, opts.ZsyncPath)
 	sshCmd := exec.Command("ssh", host, opts.ZsyncPath, "--server")
 	stdin, err := sshCmd.StdinPipe()
 	panicOn(err)
@@ -34,7 +32,7 @@ func client(ds, host string) {
 	stderr, err := sshCmd.StderrPipe()
 	panicOn(err)
 
-	go printLines(stderr)
+	go printLines("remote: ", stderr)
 
 	err = sshCmd.Start()
 	panicOn(err)
@@ -83,7 +81,7 @@ func client(ds, host string) {
 	sendStderr, err := sendCmd.StderrPipe()
 	panicOn(err)
 
-	go printLines(sendStderr)
+	go printLines("zfs send: ", sendStderr)
 
 	err = sendCmd.Start()
 	panicOn(err)
@@ -118,17 +116,6 @@ func client(ds, host string) {
 
 	td := time.Since(t0)
 	logf(INFO, "zsync: sent %s@%s; %sB in %.2f seconds (%sB/s)\n", toSend.Dataset, toSend.Snapshot, toSi(tot), td.Seconds(), toSi(int(float64(tot)/td.Seconds())))
-}
-
-func printLines(r io.Reader) {
-	br := bufio.NewReader(r)
-	for {
-		bs, _, err := br.ReadLine()
-		if err == io.EOF {
-			break
-		}
-		fmt.Println(string(bs))
-	}
 }
 
 func latestCommon(o, n []zfs.SnapshotEntry) *zfs.SnapshotEntry {
@@ -181,10 +168,12 @@ func bufferedCopyOut(w io.WriteCloser, r io.Reader) int {
 	}()
 
 	go func() {
-		var printed bool
 		t0 := time.Now()
 		var t1 time.Time
 
+		if opts.Progress {
+			fmt.Fprintf(os.Stderr, "\n")
+		}
 		for {
 			b := <-rb
 
@@ -203,16 +192,11 @@ func bufferedCopyOut(w io.WriteCloser, r io.Reader) int {
 			if opts.Progress {
 				td := time.Since(t1)
 				if td.Seconds() > 1 {
-					printed = true
 					rate := int(float64(tot) / time.Since(t0).Seconds())
-					fmt.Fprintf(os.Stderr, "\rzsync: send:  %6sB  %6sB/s", toSi(tot), toSi(rate))
+					fmt.Fprintf(os.Stderr, "\x1B[Azsync: send:  %6sB  %6sB/s\n", toSi(tot), toSi(rate))
 					t1 = time.Now()
 				}
 			}
-		}
-
-		if printed {
-			fmt.Println()
 		}
 		wg.Done()
 	}()

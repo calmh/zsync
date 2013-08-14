@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/jessevdk/go-flags"
@@ -81,7 +83,7 @@ func negotiateVersion(e *gob.Encoder, d *gob.Decoder) {
 
 func panicOn(e error) {
 	if e != nil {
-		fmt.Fprintf(os.Stderr, "PANIC: %v\n", e)
+		fmt.Fprintf(os.Stderr, "panic: %v\n", e)
 		os.Exit(3)
 	}
 }
@@ -89,5 +91,16 @@ func panicOn(e error) {
 func logf(level LogLevel, format string, args ...interface{}) {
 	if opts.verbosity >= level {
 		fmt.Fprintf(os.Stderr, format, args...)
+	}
+}
+
+func printLines(prefix string, r io.Reader) {
+	br := bufio.NewReader(r)
+	for {
+		bs, _, err := br.ReadLine()
+		if err == io.EOF {
+			break
+		}
+		fmt.Fprintf(os.Stderr, "%s%s\n", prefix, bs)
 	}
 }
