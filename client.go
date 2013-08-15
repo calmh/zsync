@@ -1,13 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/calmh/zfs"
@@ -125,7 +124,14 @@ func client(ds, host string) {
 	logf(VERBOSE, "zsync: sending %s@%s\n", toSend.Dataset, toSend.Snapshot)
 
 	t0 := time.Now()
-	tot := bufferedCopyOut(ChunkedWriter{stdin}, stream)
+	bufout := bufio.NewWriterSize(stdin, opts.bufferBytes)
+	chunkout := ChunkedWriter{bufout}
+	tot, err := io.Copy(chunkout, stream)
+	panicOn(err)
+	err = chunkout.Flush()
+	panicOn(err)
+	err = bufout.Flush()
+	panicOn(err)
 
 	err = sendCmd.Wait()
 	panicOn(err)
@@ -139,7 +145,7 @@ func client(ds, host string) {
 	panicOn(err)
 
 	td := time.Since(t0)
-	logf(INFO, "zsync: sent %s@%s; %sB in %.2f seconds (%sB/s)\n", toSend.Dataset, toSend.Snapshot, toSi(tot), td.Seconds(), toSi(int(float64(tot)/td.Seconds())))
+	logf(INFO, "zsync: sent %s@%s; %sB in %.2f seconds (%sB/s)\n", toSend.Dataset, toSend.Snapshot, toSi(int(tot)), td.Seconds(), toSi(int(float64(tot)/td.Seconds())))
 }
 
 func latestCommon(o, n []zfs.SnapshotEntry) *zfs.SnapshotEntry {
@@ -152,81 +158,6 @@ func latestCommon(o, n []zfs.SnapshotEntry) *zfs.SnapshotEntry {
 		}
 	}
 	return nil
-}
-
-func bufferedCopyOut(w io.WriteCloser, r io.Reader) int {
-	nbufs := 1000
-	bufsize := 65536
-
-	wb := make(chan []byte, nbufs)
-	rb := make(chan []byte, nbufs)
-	for i := 0; i < nbufs; i++ {
-		wb <- make([]byte, bufsize)
-	}
-
-	var tot int
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		for {
-			b := <-wb
-
-			b = b[:cap(b)]
-			n, e := io.ReadFull(r, b)
-			b = b[:n]
-
-			rb <- b
-
-			if e == io.ErrUnexpectedEOF {
-				rb <- []byte{}
-				break
-			} else if e == io.EOF {
-				break
-			}
-
-			panicOn(e)
-		}
-
-		wg.Done()
-	}()
-
-	go func() {
-		t0 := time.Now()
-		var t1 time.Time
-
-		if opts.Progress {
-			fmt.Fprintf(os.Stderr, "\n")
-		}
-		for {
-			b := <-rb
-
-			if len(b) == 0 {
-				w.Close()
-				break
-			}
-
-			n, err := w.Write(b)
-			panicOn(err)
-
-			wb <- b
-
-			tot += n
-
-			if opts.Progress {
-				td := time.Since(t1)
-				if td.Seconds() > 1 {
-					rate := int(float64(tot) / time.Since(t0).Seconds())
-					fmt.Fprintf(os.Stderr, "\x1B[Azsync: send:  %6sB  %6sB/s\n", toSi(tot), toSi(rate))
-					t1 = time.Now()
-				}
-			}
-		}
-		wg.Done()
-	}()
-
-	wg.Wait()
-	return tot
 }
 
 func toSi(n int) string {

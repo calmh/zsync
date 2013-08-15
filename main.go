@@ -37,14 +37,16 @@ type Command struct {
 }
 
 var opts struct {
-	Verbose   []bool `long:"verbose" short:"v" description:"increase the output verbosity"`
-	Progress  bool   `long:"progress" short:"p" description:"show progress indicator during send"`
-	NoMount   bool   `long:"no-mount" short:"u" description:"do not mount the destination dataset after replication (i.e. do zfs recv -u)"`
-	Rollback  bool   `long:"rollback" short:"F" description:"rollback the destination dataset prior to replication (i.e. do zfs recv -F)"`
-	Recursive bool   `long:"recursive" short:"R" description:"recursively send snapshots and child datasets (i.e. do zfs send -R)"`
-	ZsyncPath string `long:"zsync-path" default:"zsync" value-name:"PROGRAM" description:"specify the zsync to run on remote machine"`
-	Server    bool   `long:"server"`
-	verbosity LogLevel
+	Verbose     []bool `long:"verbose" short:"v" description:"increase the output verbosity"`
+	Progress    bool   `long:"progress" short:"p" description:"show progress indicator during send"`
+	NoMount     bool   `long:"no-mount" short:"u" description:"do not mount the destination dataset after replication (i.e. do zfs recv -u)"`
+	Rollback    bool   `long:"rollback" short:"F" description:"rollback the destination dataset prior to replication (i.e. do zfs recv -F)"`
+	Recursive   bool   `long:"recursive" short:"R" description:"recursively send snapshots and child datasets (i.e. do zfs send -R)"`
+	BufferMB    int    `long:"buffer" description:"buffer size (send & receive)" value-name:"MB" default:"128"`
+	ZsyncPath   string `long:"zsync-path" default:"zsync" value-name:"PROGRAM" description:"specify the zsync to run on remote machine"`
+	Server      bool   `long:"server"`
+	verbosity   LogLevel
+	bufferBytes int
 	//SetReadOnly      bool   `long:"set-readonly" description:"do zfs set readonly=on on the destination"`
 }
 
@@ -53,6 +55,7 @@ func main() {
 	parser.Usage = "[OPTIONS] <srcds>[@snapshot] <host>[:dstds]"
 	args, err := parser.Parse()
 	opts.verbosity = LogLevel(len(opts.Verbose))
+	opts.bufferBytes = opts.BufferMB * 1024 * 1024
 
 	if err != nil || !opts.Server && len(args) != 2 {
 		fmt.Fprintln(os.Stderr)

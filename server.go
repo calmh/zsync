@@ -47,6 +47,7 @@ func server() {
 			panicOn(err)
 			stdout, err := cmd.StdoutPipe()
 			panicOn(err)
+			bufstdin := bufio.NewWriterSize(stdin, opts.bufferBytes)
 
 			go printLines("zfs recv: ", stderr)
 			go printLines("zfs recv: ", stdout)
@@ -54,19 +55,22 @@ func server() {
 			err = cmd.Start()
 			panicOn(err)
 
-			var bs = make([]byte, 65536)
+			var bs []byte
 			cr := ChunkedReader{bstdin}
 
 			for {
-				rb, err := cr.Read(bs)
+				bs, err = cr.Read(bs)
 				if err == io.EOF {
-					stdin.Close()
+					err = bufstdin.Flush()
+					panicOn(err)
+					err = stdin.Close()
+					panicOn(err)
 					break
 				}
 				panicOn(err)
-				bs = bs[:rb]
 
-				wb, err := stdin.Write(bs)
+				rb := len(bs)
+				wb, err := bufstdin.Write(bs)
 				panicOn(err)
 
 				if wb != rb {
