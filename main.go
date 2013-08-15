@@ -37,14 +37,14 @@ type Command struct {
 }
 
 var opts struct {
-	Verbose          []bool `long:"verbose" short:"v" description:"increase the output verbosity"`
-	Progress         bool   `long:"progress" short:"p" description:"show progress indicator during send"`
-	MountDestination bool   `long:"mount-destination" description:"mount the destination dataset after replication (i.e. do not do zfs recv -u)"`
-	NoRollback       bool   `long:"no-rollback" description:"do not rollback the destination dataset prior to replication (i.e. do not do zfs recv -F)"`
-	NoRecurse        bool   `long:"no-recursive" description:"do not recursively send snapshots and child datasets (i.e. do not do zfs send -R)"`
-	ZsyncPath        string `long:"zsync-path" default:"zsync" value-name:"PROGRAM" description:"specify the zsync to run on remote machine"`
-	Server           bool   `long:"server" description:"[internal]"`
-	verbosity        LogLevel
+	Verbose   []bool `long:"verbose" short:"v" description:"increase the output verbosity"`
+	Progress  bool   `long:"progress" short:"p" description:"show progress indicator during send"`
+	NoMount   bool   `long:"no-mount" short:"u" description:"do not mount the destination dataset after replication (i.e. do zfs recv -u)"`
+	Rollback  bool   `long:"rollback" short:"F" description:"rollback the destination dataset prior to replication (i.e. do zfs recv -F)"`
+	Recursive bool   `long:"recursive" short:"R" description:"recursively send snapshots and child datasets (i.e. do zfs send -R)"`
+	ZsyncPath string `long:"zsync-path" default:"zsync" value-name:"PROGRAM" description:"specify the zsync to run on remote machine"`
+	Server    bool   `long:"server" description:"[internal]"`
+	verbosity LogLevel
 	//SetReadOnly      bool   `long:"set-readonly" description:"do zfs set readonly=on on the destination"`
 }
 

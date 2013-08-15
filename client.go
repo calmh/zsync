@@ -15,13 +15,21 @@ import (
 
 func client(ds, host string) {
 	var command Command
+	var sourceSs string
 	var serverDs string
+
 	if strings.ContainsRune(host, ':') {
 		fs := strings.SplitN(host, ":", 2)
 		host = fs[0]
 		serverDs = fs[1]
 	} else {
 		serverDs = ds
+	}
+
+	if strings.ContainsRune(ds, '@') {
+		fs := strings.SplitN(ds, "@", 2)
+		ds = fs[0]
+		sourceSs = fs[1]
 	}
 
 	sshCmd := exec.Command("ssh", host, opts.ZsyncPath, "--server")
@@ -53,8 +61,24 @@ func client(ds, host string) {
 	clientSnapshots, err := zfs.ListSnapshots(ds)
 	panicOn(err)
 
-	toSend := clientSnapshots[len(clientSnapshots)-1]
-	logf(VERBOSE, "zsync: our latest: %s@%s\n", toSend.Dataset, toSend.Snapshot)
+	var toSend *zfs.SnapshotEntry
+	if sourceSs != "" {
+		for i, s := range clientSnapshots {
+			if s.Snapshot == sourceSs {
+				toSend = &s
+				clientSnapshots = clientSnapshots[:i+1]
+				break
+			}
+		}
+	} else {
+		toSend = &clientSnapshots[len(clientSnapshots)-1]
+		logf(VERBOSE, "zsync: our latest: %s@%s\n", toSend.Dataset, toSend.Snapshot)
+	}
+
+	if toSend == nil {
+		logf(INFO, "zsync: no snapshot to send\n")
+		return
+	}
 
 	latest := latestCommon(serverSnapshots, clientSnapshots)
 	if latest != nil {
@@ -68,7 +92,7 @@ func client(ds, host string) {
 	}
 
 	params := []string{"send"}
-	if !opts.NoRecurse {
+	if opts.Recursive {
 		params = append(params, "-R")
 	}
 	if latest != nil {
@@ -87,10 +111,10 @@ func client(ds, host string) {
 	panicOn(err)
 
 	params = nil
-	if !opts.NoRollback {
+	if opts.Rollback {
 		params = append(params, "-F")
 	}
-	if !opts.MountDestination {
+	if opts.NoMount {
 		params = append(params, "-u")
 	}
 	params = append(params, serverDs)
