@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -55,26 +54,23 @@ func server() {
 			err = cmd.Start()
 			panicOn(err)
 
+			var bs = make([]byte, 65536)
+			cr := ChunkedReader{bstdin}
+
 			for {
-				var l uint32
-				err := binary.Read(bstdin, binary.BigEndian, &l)
-				if l == 0 {
+				rb, err := cr.Read(bs)
+				if err == io.EOF {
 					stdin.Close()
 					break
 				}
 				panicOn(err)
+				bs = bs[:rb]
 
-				bs := make([]byte, l)
-				_, err = io.ReadFull(bstdin, bs)
+				wb, err := stdin.Write(bs)
 				panicOn(err)
 
-				n, err := stdin.Write(bs)
-				// if err != nil {
-				// 	break
-				// }
-				panicOn(err)
-				if n != int(l) {
-					panic(fmt.Errorf("server: short write: %d != %d", n, l))
+				if wb != rb {
+					panic(fmt.Errorf("server: short write: w%d != r%d", wb, rb))
 				}
 			}
 
