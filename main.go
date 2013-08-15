@@ -43,7 +43,7 @@ var opts struct {
 	Rollback  bool   `long:"rollback" short:"F" description:"rollback the destination dataset prior to replication (i.e. do zfs recv -F)"`
 	Recursive bool   `long:"recursive" short:"R" description:"recursively send snapshots and child datasets (i.e. do zfs send -R)"`
 	ZsyncPath string `long:"zsync-path" default:"zsync" value-name:"PROGRAM" description:"specify the zsync to run on remote machine"`
-	Server    bool   `long:"server" description:"[internal]"`
+	Server    bool   `long:"server"`
 	verbosity LogLevel
 	//SetReadOnly      bool   `long:"set-readonly" description:"do zfs set readonly=on on the destination"`
 }
@@ -57,7 +57,9 @@ func main() {
 	if err != nil || !opts.Server && len(args) != 2 {
 		fmt.Fprintln(os.Stderr)
 		parser.WriteHelp(os.Stderr)
-		fmt.Fprintf(os.Stderr, "\nExample:\n  %s tank/data root@172.16.32.12:tank/replicated\n\n", parser.ApplicationName)
+		fmt.Fprintf(os.Stderr, "\nExample:\n")
+		fmt.Fprintf(os.Stderr, "  %s tank/data 172.16.32.12:tank/replicated\n", parser.ApplicationName)
+		fmt.Fprintf(os.Stderr, "  %s -vpFuR tank/data@snap42 root@remote:tank/data\n\n", parser.ApplicationName)
 		os.Exit(2)
 	}
 
