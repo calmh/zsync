@@ -32,13 +32,15 @@ func client(ds, host string) {
 	}
 
 	sshCmd := exec.Command("ssh", host, opts.ZsyncPath, "--server")
+
 	stdin, err := sshCmd.StdinPipe()
 	panicOn(err)
+
 	stdout, err := sshCmd.StdoutPipe()
 	panicOn(err)
+
 	stderr, err := sshCmd.StderrPipe()
 	panicOn(err)
-
 	go printLines("remote: ", stderr)
 
 	err = sshCmd.Start()
@@ -100,7 +102,8 @@ func client(ds, host string) {
 	params = append(params, ds+"@"+toSend.Snapshot)
 
 	sendCmd := exec.Command("zfs", params...)
-	stream, _ := sendCmd.StdoutPipe()
+	stream, err := sendCmd.StdoutPipe()
+	panicOn(err)
 	sendStderr, err := sendCmd.StderrPipe()
 	panicOn(err)
 
@@ -128,8 +131,10 @@ func client(ds, host string) {
 	chunkout := ChunkedWriter{bufout}
 	tot, err := io.Copy(chunkout, stream)
 	panicOn(err)
+
 	err = chunkout.Flush()
 	panicOn(err)
+
 	err = bufout.Flush()
 	panicOn(err)
 

@@ -28,7 +28,7 @@ type ChunkedReader struct {
 	io.Reader
 }
 
-func (r ChunkedReader) Read(bs []byte) (b []byte, err error) {
+func (r ChunkedReader) Read(bs []byte) (n int, err error) {
 	var l uint32
 	err = binary.Read(r.Reader, binary.BigEndian, &l)
 	if err != nil {
@@ -41,11 +41,11 @@ func (r ChunkedReader) Read(bs []byte) (b []byte, err error) {
 	}
 
 	if int(l) > cap(bs) {
-		b = make([]byte, l)
-	} else {
-		b = bs[:l]
+		err = io.ErrShortBuffer
+		return
 	}
 
-	_, err = io.ReadFull(r.Reader, b)
-	return b, err
+	bs = bs[:l]
+	n, err = io.ReadFull(r.Reader, bs)
+	return
 }
